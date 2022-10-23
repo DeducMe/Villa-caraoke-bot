@@ -1,0 +1,7 @@
+[
+    { "view": { "id": 0, "artist": "Rammstein", "name": "du hast", "type": "1" }, "sys": { "id": 0, "artist": "rammstein", "name": "duhast", "type": "1" } },
+    { "view": { "id": 1, "artist": "Артур Пирожков", "name": "Зацепила", "type": "2" }, "sys": { "id": 1, "artist": "артурпирожков", "name": "зацепила", "type": "2" } },
+    { "view": { "id": 2, "artist": "Кринж", "name": "Мегакринж", "type": "2" }, "sys": { "id": 2, "artist": "кринж", "name": "мегакринж", "type": "2" } },
+    { "view": { "id": 3, "artist": "Disturbed", "name": "Down with the sickness", "type": "1" }, "sys": { "id": 3, "artist": "disturbed", "name": "downwiththesickness", "type": "1" } },
+    { "view": { "id": 4, "artist": "Test", "name": "Test 2", "type": "1" }, "sys": { "id": 4, "artist": "test", "name": "test2", "type": "1" } }
+]
