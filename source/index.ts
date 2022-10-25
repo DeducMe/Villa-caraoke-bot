@@ -165,13 +165,16 @@ bot.onText(/\/help|\/start/, async (msg: any, match: any) => {
     );
 });
 
-bot.onText(/\/to_admin (.+)/, async (msg, match: any) => {
+bot.onText(/\/to_admin/, async (msg, match: any) => {
     const { id, first_name, username, type } = msg.chat;
     const chatId = msg.chat.id;
     if (!first_name && !username) return;
-    const respText = match[1];
+    const respText = msg.text?.replace('/to_admin', '');
 
-    if (!respText) return bot.sendMessage(chatId, `Напишите сообщение в виде /to_admin Помогите пожалуйста!`);
+    if (!respText) {
+        bot.sendMessage(chatId, `Напишите сообщение в виде /to_admin Помогите пожалуйста!`);
+        return;
+    }
     bot.sendMessage(-842704770, `${first_name}(@${username}) говорит:\n${respText}`);
     bot.sendMessage(chatId, `Ваше сообщение отправлено к нам в чат!`);
 });
