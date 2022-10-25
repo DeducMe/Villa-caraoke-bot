@@ -10,12 +10,16 @@ const textes: string[] = [];
 
 async function normalizeText() {
     let text = await fs.readFileSync('../assets/text.txt', 'utf8');
+    if (!text.includes('#EXTINF')) return;
     text = text
         .replaceAll('#EXTM3U', '')
         .replaceAll('.mpg', '')
         .replaceAll('.wmv', '')
         .replaceAll('.mp4', '')
         .replaceAll('.mp3', '')
+        .replaceAll('.sfk', '')
+        .replaceAll('.scc', '')
+        .replaceAll('.avi', '')
         .replaceAll(' - ', '~')
         .replaceAll('ПОПОЙКА', '')
         .replaceAll('А\\', '')
@@ -25,7 +29,7 @@ async function normalizeText() {
         .map((item) => {
             const splitted = item.split('~');
             if (splitted.length < 2) return item;
-            if (/^[А-ЯЁ][а-яё]/.test(item)) {
+            if (/[А-ЯЁ][а-яё]/i.test(item)) {
                 splitted[2] = 'наше 🐻';
             } else {
                 splitted[2] = 'иностранное 👽';
@@ -76,7 +80,9 @@ async function getMusic(msg: any, match?: any) {
     // of the message
 
     const chatId = msg.chat.id;
-    const respSearch = msg.text.replace('/music', '').toLowerCase().replace(/\s/g, ''); // the captured "whatever"
+    bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
+
+    const respSearch = !msg.from.is_bot ? msg.text.replace('/music', '').toLowerCase().replace(/\s/g, '').trim() : ''; // the captured "whatever"
     let filteredJson: any[] = JSON.parse(musicjson);
 
     if (respSearch)
@@ -93,6 +99,7 @@ async function getMusic(msg: any, match?: any) {
     const parsedJson = filteredJson
         .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`)
         .join('\n');
+
     // send back the matched "whatever" to the chat
     bot.sendMessage(chatId, parsedJson || 'Не найдено ни одного трека');
 }
@@ -126,7 +133,6 @@ bot.on('document', async (msg, match: any) => {
 });
 
 bot.on('callback_query', function onCallbackQuery(callbackQuery) {
-    console.log(callbackQuery);
     const action = callbackQuery.data;
     const msg = callbackQuery.message;
     if (!msg) return;
@@ -143,7 +149,7 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
     // bot.editMessageText(text, opts);
 });
 
-bot.onText(/\/help/, async (msg: any, match: any) => {
+bot.onText(/\/help|\/start/, async (msg: any, match: any) => {
     const opts = {
         reply_markup: {
             inline_keyboard: [[{ text: 'Посмотреть музыку', callback_data: 'music' }]]
