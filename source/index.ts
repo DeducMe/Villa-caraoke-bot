@@ -14,6 +14,7 @@ async function normalizeText() {
     text = text
         .replaceAll('#EXTM3U', '')
         .replaceAll('.mpg', '')
+        .replaceAll('ё', 'е')
         .replaceAll('.wmv', '')
         .replaceAll('.mp4', '')
         .replaceAll('.mp3', '')
@@ -82,7 +83,7 @@ async function getMusic(msg: any, match?: any) {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
 
-    const respSearch = !msg.from.is_bot ? msg.text.replace('/music', '').toLowerCase().replace(/\s/g, '').trim() : ''; // the captured "whatever"
+    const respSearch = !msg.from.is_bot ? msg.text.replace('/music', '').toLowerCase().replace(/\s/g, '').replaceAll('ё', 'е').trim() : ''; // the captured "whatever"
     let filteredJson: any[] = JSON.parse(musicjson);
 
     if (respSearch)
