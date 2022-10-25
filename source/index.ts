@@ -1,32 +1,69 @@
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
-
 // replace the value below with the Telegram token you receive from @BotFather
 const token = '5682656312:AAF8iYL-ndx5VRisoQLdPBiassDd5ROzR84';
 const admins = [309012249, 719854908];
 // Create a bot that uses 'polling' to fetch new updates
 const bot = new TelegramBot(token, { polling: true });
 
-async function getTxtToJson() {
-    let text = await fs.readFileSync('../assets/text.txt', 'utf8');
+const textes: string[] = [];
 
-    const jsonData = text.split('\n').map((item, index) => {
-        const data: string[] = item.split(',');
-        return {
-            view: {
-                id: index,
-                artist: data[0],
-                name: data[1],
-                type: data[2]
-            },
-            sys: {
-                id: index,
-                artist: data[0].toLowerCase().replace(/\s/g, ''),
-                name: data[1].toLowerCase().replace(/\s/g, ''),
-                type: data[2].toLowerCase().replace(/\s/g, '')
+async function normalizeText() {
+    let text = await fs.readFileSync('../assets/text.txt', 'utf8');
+    text = text
+        .replaceAll('#EXTM3U', '')
+        .replaceAll('.mpg', '')
+        .replaceAll('.wmv', '')
+        .replaceAll('.mp4', '')
+        .replaceAll('.mp3', '')
+        .replaceAll(' - ', '~')
+        .replaceAll('ПОПОЙКА', '')
+        .replaceAll('А\\', '')
+        .replaceAll('\\', '')
+        .split(`\r\n`)
+        .filter((item) => !item.includes('#EXTINF'))
+        .map((item) => {
+            const splitted = item.split('~');
+            if (splitted.length < 2) return item;
+            if (/^[А-ЯЁ][а-яё]/.test(item)) {
+                splitted[2] = 'наше 🐻';
+            } else {
+                splitted[2] = 'иностранное 👽';
             }
-        };
-    });
+
+            return splitted.join('~');
+        })
+        .join('\n');
+    textes.push(text);
+
+    return await fs.writeFileSync('../assets/textParsed.txt', textes.join('\n'));
+}
+
+async function getTxtToJson() {
+    let text = await fs.readFileSync('../assets/textParsed.txt', 'utf8');
+
+    const jsonData = text
+        .split('\n')
+        .map((item, index) => {
+            const data: string[] = item.split('~');
+            let singleName = false;
+            if (data.length === 1) singleName = true;
+            return {
+                view: {
+                    id: index,
+                    artist: singleName ? '' : data[0],
+                    name: singleName ? data[0] : data[1] || '',
+                    type: data[2] || ''
+                },
+                sys: {
+                    id: index,
+                    artist: singleName ? '' : data[0]?.toLowerCase().replace(/\s/g, ''),
+                    name: data[singleName ? 0 : 1]?.toLowerCase().replace(/\s/g, '') || '',
+                    type: data[2]?.toLowerCase().replace(/\s/g, '') || ''
+                }
+            };
+        })
+        .filter((item) => item.view.name);
     await fs.writeFileSync('../assets/jsonData.json', JSON.stringify(jsonData));
     return jsonData;
 }
@@ -51,7 +88,11 @@ async function getMusic(msg: any, match?: any) {
             return false;
         });
 
-    const parsedJson = filteredJson.map((item) => `Трек: ${item.view.name}\nИсполнитель: ${item.view.artist}\nТип: ${item.view.type}`).join('\n\n');
+    filteredJson.length = 30;
+
+    const parsedJson = filteredJson
+        .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`)
+        .join('\n');
     // send back the matched "whatever" to the chat
     bot.sendMessage(chatId, parsedJson || 'Не найдено ни одного трека');
 }
@@ -64,6 +105,8 @@ bot.on('document', async (msg, match: any) => {
     if (!msg.from || !msg.document?.file_id || !admins.includes(msg.from.id)) return;
     bot.sendMessage(msg.chat.id, 'Грузим файл...');
 
+    let timeout: any = null;
+
     const readableStream = await bot.getFileStream(msg.document?.file_id);
 
     readableStream.on('error', function (error) {
@@ -72,8 +115,13 @@ bot.on('document', async (msg, match: any) => {
 
     readableStream.on('data', async (chunk) => {
         await fs.writeFileSync('../assets/text.txt', chunk.toString());
-        await getTxtToJson();
-        bot.sendMessage(msg.chat.id, 'Файл песен успешно загружен');
+        await normalizeText();
+        timeout && clearTimeout(timeout);
+        timeout = setTimeout(async () => {
+            await getTxtToJson();
+
+            bot.sendMessage(msg.chat.id, 'Файл песен успешно загружен');
+        }, 1000);
     });
 });
 
