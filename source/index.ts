@@ -214,7 +214,7 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
     switch (action) {
         case 'music':
             globalData.userData[findUserIndex].curPage = 0;
-            getMusic(msg, '');
+            getMusic(msg, '/music');
 
             break;
         case 'musicRu':
