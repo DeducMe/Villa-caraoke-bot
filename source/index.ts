@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
+import express from 'express';
 // replace the value below with the Telegram token you receive from @BotFather
 const token = '5682656312:AAF8iYL-ndx5VRisoQLdPBiassDd5ROzR84';
 const admins = [309012249, 719854908];
@@ -180,3 +181,6 @@ bot.onText(/\/to_admin/, async (msg, match: any) => {
     bot.sendMessage(-842704770, `${first_name}(@${username}) говорит:\n${respText}`);
     bot.sendMessage(chatId, `Ваше сообщение отправлено к нам в чат!`);
 });
+export const app = express();
+
+app.listen(process.env.PORT || 5000);
