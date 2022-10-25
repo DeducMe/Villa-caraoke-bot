@@ -98,7 +98,8 @@ async function getMusic(msg: any, match?: any) {
 
     const parsedJson = filteredJson
         .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`)
-        .join('\n');
+        .join('\n')
+        .trim();
 
     // send back the matched "whatever" to the chat
     bot.sendMessage(chatId, parsedJson || 'Не найдено ни одного трека');
