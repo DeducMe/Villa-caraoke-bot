@@ -171,7 +171,7 @@ bot.onText(/\/to_admin (.+)/, async (msg, match: any) => {
     if (!first_name && !username) return;
     const respText = match[1];
 
-    if (!respText) return;
+    if (!respText) return bot.sendMessage(chatId, `Напишите сообщение в виде /to_admin Помогите пожалуйста!`);
     bot.sendMessage(-842704770, `${first_name}(@${username}) говорит:\n${respText}`);
     bot.sendMessage(chatId, `Ваше сообщение отправлено к нам в чат!`);
 });
