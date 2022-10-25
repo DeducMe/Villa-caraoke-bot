@@ -1,13 +1,26 @@
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
-import express from 'express';
 // replace the value below with the Telegram token you receive from @BotFather
 const token = '5682656312:AAF8iYL-ndx5VRisoQLdPBiassDd5ROzR84';
 const admins = [309012249, 719854908];
+
+type IGlobalData = {
+    userData: {
+        userId: number;
+        curPage: number;
+        bufMusicData: string[];
+        userName?: string;
+    }[];
+};
+
+const globalData: IGlobalData = {
+    userData: []
+};
 // Create a bot that uses 'polling' to fetch new updates
 const bot = new TelegramBot(token, { polling: true });
 
 const textes: string[] = [];
+const MUSIC_PAGING = 10;
 
 async function normalizeText() {
     let text = await fs.readFileSync('../assets/text.txt', 'utf8');
@@ -75,19 +88,45 @@ async function getTxtToJson() {
     return jsonData;
 }
 
-async function getMusic(msg: any, match?: any) {
-    let musicjson = await fs.readFileSync('../assets/jsonData.json', 'utf-8');
+async function switchMusicPage(msg: any, page: number) {
+    let findUserIndex = globalData.userData.findIndex((item) => item.userId === msg.chat.id);
+    const bufMusicData = globalData.userData[findUserIndex].bufMusicData;
+    console.log(bufMusicData[0], page);
 
-    // 'msg' is the received Message from Telegram
-    // 'match' is the result of executing the regexp above on the text content
-    // of the message
+    const curPage = globalData.userData[findUserIndex].curPage;
+    const parsedJsonString = bufMusicData
+        .slice(page * MUSIC_PAGING, (page + 1) * MUSIC_PAGING)
+        .join('\n')
+        .trim();
+
+    // send back the matched "whatever" to the chat
+    const opts = {
+        chat_id: msg.chat.id,
+        message_id: msg.message_id,
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: `<< (${curPage})`, callback_data: 'prevPage' },
+                    { text: `>> (${Math.floor(bufMusicData.length / MUSIC_PAGING) - curPage})`, callback_data: 'nextPage' }
+                ]
+            ]
+        }
+    };
+
+    bot.editMessageText(parsedJsonString || 'Не найдено ни одного трека', opts);
+
+    // bot.sendMessage(chatId, parsedJsonString || 'Не найдено ни одного трека', opts);
+}
+
+async function getMusic(msg: any, customMessage?: string) {
+    let musicjson = await fs.readFileSync('../assets/jsonData.json', 'utf-8');
+    const message = customMessage || msg.text;
 
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
+    const loadingMessage = await bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
 
-    const respSearch = !msg.from.is_bot ? msg.text.replace('/music', '').toLowerCase().replace(/\s/g, '').replaceAll('ё', 'е').trim() : ''; // the captured "whatever"
+    const respSearch = message.replace('/music', '').toLowerCase().replaceAll('ё', 'е')?.replace(/\s/g, '')?.trim();
     let filteredJson: any[] = JSON.parse(musicjson);
-
     if (respSearch)
         filteredJson = filteredJson.filter((item) => {
             if (item.sys.artist.includes(respSearch) || item.sys.name.includes(respSearch) || item.sys.type.includes(respSearch)) {
@@ -97,20 +136,46 @@ async function getMusic(msg: any, match?: any) {
             return false;
         });
 
-    filteredJson.length = 30;
-
     const parsedJson = filteredJson
         .filter((item) => !!item.view.name)
-        .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`)
-        .join('\n')
-        .trim();
+        .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`);
 
+    let findUserIndex = globalData.userData.findIndex((item) => item.userId === msg.chat.id);
+    globalData.userData[findUserIndex].curPage = 0;
+    const bufMusicData = JSON.parse(JSON.stringify(parsedJson));
+    globalData.userData[findUserIndex].bufMusicData = bufMusicData;
+
+    const opts = {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: `<< (${0})`, callback_data: 'prevPage' },
+                    { text: `>> (${Math.floor(parsedJson.length / MUSIC_PAGING)})`, callback_data: 'nextPage' }
+                ]
+            ]
+        }
+    };
+    const moreThanPaging = parsedJson.length > MUSIC_PAGING;
+    if (moreThanPaging) {
+        parsedJson.length = MUSIC_PAGING;
+    }
+    const parsedJsonString = parsedJson.join('\n').trim();
     // send back the matched "whatever" to the chat
-    bot.sendMessage(chatId, parsedJson || 'Не найдено ни одного трека');
+    bot.deleteMessage(chatId, `${loadingMessage.message_id}`);
+    bot.sendMessage(chatId, parsedJsonString || 'Не найдено ни одного трека', moreThanPaging ? opts : undefined);
 }
 
-bot.onText(/\/music/, async (msg, match: any) => {
-    getMusic(msg, match);
+async function checkUser(msg: any) {
+    let findUser = globalData.userData.find((item) => item.userId === msg.from.id);
+    if (!findUser) {
+        globalData.userData.push({ userId: msg.from.id, curPage: 0, bufMusicData: [], userName: '@' + msg.from.username });
+    }
+}
+
+bot.on('message', async (msg) => {
+    if (!msg.text?.includes('/music') && (!msg.text || msg.text[0] === '/')) return;
+    checkUser(msg);
+    getMusic(msg);
 });
 
 bot.on('document', async (msg, match: any) => {
@@ -141,14 +206,41 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
     const action = callbackQuery.data;
     const msg = callbackQuery.message;
     if (!msg) return;
+    let findUserIndex = globalData.userData.findIndex((item) => item.userId === msg.chat.id);
 
-    const opts = {
-        chat_id: msg.chat.id,
-        message_id: msg.message_id
-    };
+    const curPage = globalData.userData[findUserIndex].curPage;
+    const bufMusicData = globalData.userData[findUserIndex].bufMusicData;
 
-    if (action === 'music') {
-        getMusic(msg);
+    switch (action) {
+        case 'music':
+            globalData.userData[findUserIndex].curPage = 0;
+            getMusic(msg, '');
+
+            break;
+        case 'musicRu':
+            globalData.userData[findUserIndex].curPage = 0;
+            getMusic(msg, 'наше');
+            break;
+        case 'musicEn':
+            globalData.userData[findUserIndex].curPage = 0;
+            getMusic(msg, 'иностранное');
+            break;
+        case 'nextPage':
+            if (!globalData.userData[findUserIndex]) break;
+
+            if ((curPage + 1) * MUSIC_PAGING <= bufMusicData.length) {
+                globalData.userData[findUserIndex].curPage += 1;
+                switchMusicPage(msg, globalData.userData[findUserIndex].curPage);
+            }
+            break;
+        case 'prevPage':
+            if (curPage - 1 >= 0) {
+                globalData.userData[findUserIndex].curPage -= 1;
+                switchMusicPage(msg, globalData.userData[findUserIndex].curPage);
+            }
+            break;
+        default:
+            break;
     }
 
     // bot.editMessageText(text, opts);
@@ -157,7 +249,13 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
 bot.onText(/\/help|\/start/, async (msg: any, match: any) => {
     const opts = {
         reply_markup: {
-            inline_keyboard: [[{ text: 'Посмотреть музыку', callback_data: 'music' }]]
+            inline_keyboard: [
+                [{ text: 'Посмотреть музыку', callback_data: 'music' }],
+                [
+                    { text: 'Наше 🐻', callback_data: 'musicRu' },
+                    { text: 'Иностранное 👽', callback_data: 'musicEn' }
+                ]
+            ]
         }
     };
 
@@ -181,6 +279,11 @@ bot.onText(/\/to_admin/, async (msg, match: any) => {
     bot.sendMessage(-842704770, `${first_name}(@${username}) говорит:\n${respText}`);
     bot.sendMessage(chatId, `Ваше сообщение отправлено к нам в чат!`);
 });
-export const app = express();
 
-app.listen(process.env.PORT || 5000);
+bot.onText(/\/get_users/, async (msg, match: any) => {
+    const chatId = msg.chat.id;
+    if (!admins.includes(chatId)) return;
+
+    const parsedUsers = globalData.userData.map((item) => `${item.userName}`).join('\n');
+    bot.sendMessage(chatId, parsedUsers);
+});
