@@ -22,6 +22,7 @@ async function normalizeText() {
         .replaceAll('.scc', '')
         .replaceAll('.avi', '')
         .replaceAll(' - ', '~')
+        .replace(/[^ -~]+/g, '')
         .replaceAll('ПОПОЙКА', '')
         .replaceAll('А\\', '')
         .replaceAll('\\', '')
@@ -68,7 +69,7 @@ async function getTxtToJson() {
                 }
             };
         })
-        .filter((item) => item.view.name);
+        .filter((item) => !!item.view.name.trim());
     await fs.writeFileSync('../assets/jsonData.json', JSON.stringify(jsonData));
     return jsonData;
 }
@@ -98,6 +99,7 @@ async function getMusic(msg: any, match?: any) {
     filteredJson.length = 30;
 
     const parsedJson = filteredJson
+        .filter((item) => !!item.view.name)
         .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`)
         .join('\n')
         .trim();
