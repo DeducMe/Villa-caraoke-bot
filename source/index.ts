@@ -21,6 +21,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 const textes: string[] = [];
 const MUSIC_PAGING = 10;
+const ARTISTS_PAGING = 10;
 
 async function normalizeText() {
     let text = await fs.readFileSync('../assets/text.txt', 'utf8');
@@ -30,14 +31,15 @@ async function normalizeText() {
         .replaceAll('.mpg', '')
         .replaceAll('ё', 'е')
         .replaceAll('.wmv', '')
+        .replaceAll('�', '')
         .replaceAll('.mp4', '')
         .replaceAll('.mp3', '')
         .replaceAll('.sfk', '')
         .replaceAll('.scc', '')
         .replaceAll('.avi', '')
         .replaceAll(' - ', '~')
-        .replace(/[^ -~]+/g, '')
         .replaceAll('ПОПОЙКА', '')
+        .replaceAll('ПОПОЙК', '')
         .replaceAll('А\\', '')
         .replaceAll('\\', '')
         .split(`\r\n`)
@@ -118,27 +120,34 @@ async function switchMusicPage(msg: any, page: number) {
     // bot.sendMessage(chatId, parsedJsonString || 'Не найдено ни одного трека', opts);
 }
 
-async function getMusic(msg: any, customMessage?: string) {
+async function getMusicJson(msg: any, customMessage?: string) {
     let musicjson = await fs.readFileSync('../assets/jsonData.json', 'utf-8');
     const message = customMessage || msg.text;
-
-    const chatId = msg.chat.id;
-    const loadingMessage = await bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
 
     const respSearch = message.replace('/music', '').toLowerCase().replaceAll('ё', 'е')?.replace(/\s/g, '')?.trim();
     let filteredJson: any[] = JSON.parse(musicjson);
     if (respSearch)
-        filteredJson = filteredJson.filter((item) => {
-            if (item.sys.artist.includes(respSearch) || item.sys.name.includes(respSearch) || item.sys.type.includes(respSearch)) {
-                return true;
-            }
+        filteredJson = filteredJson
+            .filter((item) => {
+                if (item.sys.artist.includes(respSearch) || item.sys.name.includes(respSearch) || item.sys.type.includes(respSearch)) {
+                    return true;
+                }
 
-            return false;
-        });
+                return false;
+            })
+            .filter((item) => !!item.view.name);
+    return filteredJson;
+}
 
-    const parsedJson = filteredJson
-        .filter((item) => !!item.view.name)
-        .map((item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`);
+async function getMusic(msg: any, customMessage?: string) {
+    const filteredJson = await getMusicJson(msg, customMessage);
+
+    const chatId = msg.chat.id;
+    const loadingMessage = await bot.sendMessage(chatId, 'Ищем музыку по вашему запросу...');
+
+    const parsedJson = filteredJson.map(
+        (item) => `${item.view.name && `Трек: ${item.view.name}\n`}${item.view.artist && `Исполнитель: ${item.view.artist}\n`}${item.view.type && `Тип: ${item.view.type}\n`}`
+    );
 
     let findUserIndex = globalData.userData.findIndex((item) => item.userId === msg.chat.id);
     globalData.userData[findUserIndex].curPage = 0;
@@ -166,9 +175,9 @@ async function getMusic(msg: any, customMessage?: string) {
 }
 
 async function checkUser(msg: any) {
-    let findUser = globalData.userData.find((item) => item.userId === msg.from.id);
+    let findUser = globalData.userData.find((item) => item.userId === msg.chat.id);
     if (!findUser) {
-        globalData.userData.push({ userId: msg.from.id, curPage: 0, bufMusicData: [], userName: '@' + msg.from.username });
+        globalData.userData.push({ userId: msg.chat.id, curPage: 0, bufMusicData: [], userName: '@' + msg.chat.username + ' ' + msg.chat.first_name });
     }
 }
 
@@ -193,6 +202,8 @@ bot.on('document', async (msg, match: any) => {
     readableStream.on('data', async (chunk) => {
         await fs.writeFileSync('../assets/text.txt', chunk.toString());
         await normalizeText();
+
+        console.log('wtf');
         timeout && clearTimeout(timeout);
         timeout = setTimeout(async () => {
             await getTxtToJson();
@@ -203,13 +214,23 @@ bot.on('document', async (msg, match: any) => {
 });
 
 bot.on('callback_query', function onCallbackQuery(callbackQuery) {
-    const action = callbackQuery.data;
+    let action = callbackQuery.data;
     const msg = callbackQuery.message;
-    if (!msg) return;
+
+    checkUser(msg);
+    if (!msg || !action) return;
+
+    console.log(msg);
+
     let findUserIndex = globalData.userData.findIndex((item) => item.userId === msg.chat.id);
 
     const curPage = globalData.userData[findUserIndex].curPage;
     const bufMusicData = globalData.userData[findUserIndex].bufMusicData;
+
+    const match = action.split('~');
+    action = match[0];
+
+    console.log(match);
 
     switch (action) {
         case 'music':
@@ -239,6 +260,9 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
                 switchMusicPage(msg, globalData.userData[findUserIndex].curPage);
             }
             break;
+        case 'findMusic':
+            getMusic(msg, match[1]);
+            break;
         default:
             break;
     }
@@ -247,7 +271,10 @@ bot.on('callback_query', function onCallbackQuery(callbackQuery) {
 });
 
 bot.onText(/\/help|\/start/, async (msg: any, match: any) => {
+    checkUser(msg);
     const opts = {
+        parse_mode: 'HTML',
+
         reply_markup: {
             inline_keyboard: [
                 [{ text: 'Посмотреть музыку', callback_data: 'music' }],
@@ -261,19 +288,19 @@ bot.onText(/\/help|\/start/, async (msg: any, match: any) => {
 
     bot.sendMessage(
         msg.chat.id,
-        'Привет! Это бот караоке тусовок Villa Stage.\n\nВы можете отправить "/music" чтобы посмотреть список всех песен или "/music фильтр" для поиска по вашему запросу\n\nЕсли у вас возникли вопросы напиште "/to_admin ваще сообщение". Оно сразу отправится к нам в чат и мы вам напишем.',
+        'Привет! Это бот караоке тусовок <b>Villa Stage</b>.\n\nВы можете отправить <b>/music</b> чтобы посмотреть список всех песен или <b>просто вписать любое слово для поиска по песне</b> и исполнителю\n\n<span class="tg-spoiler">Для просмотра всех исполнителей напишите /get_artists, но будьте осторожны, у нас их очень много и они все упадут к вам в чат. Лучше используйте обычный поиск :)</span>\n\nЕсли вы хотите спеть песню напишите "/todj ваще сообщение". Оно сразу отправится к нам в чат и мы вам напишем.',
         opts
     );
 });
 
-bot.onText(/\/to_admin/, async (msg, match: any) => {
+bot.onText(/\/todj/, async (msg, match: any) => {
     const { id, first_name, username, type } = msg.chat;
     const chatId = msg.chat.id;
     if (!first_name && !username) return;
-    const respText = msg.text?.replace('/to_admin', '');
+    const respText = msg.text?.replace('/todj', '');
 
     if (!respText) {
-        bot.sendMessage(chatId, `Напишите сообщение в виде /to_admin Помогите пожалуйста!`);
+        bot.sendMessage(chatId, `Напишите сообщение в виде /todj Хочу спеть Артура Пирожкова - Paradise`);
         return;
     }
     bot.sendMessage(-842704770, `${first_name}(@${username}) говорит:\n${respText}`);
@@ -286,4 +313,29 @@ bot.onText(/\/get_users/, async (msg, match: any) => {
 
     const parsedUsers = globalData.userData.map((item) => `${item.userName}`).join('\n');
     bot.sendMessage(chatId, parsedUsers);
+});
+
+bot.onText(/\/get_artists/, async (msg, match: any) => {
+    const musicJson = await getMusicJson(msg, '/music');
+    const chatId = msg.chat.id;
+
+    const artists = musicJson.map((item) => item.view.artist.trim() || 'Нет исполнителя');
+    let filteredArtists = artists.filter((item, index) => artists.indexOf(item) === index).sort();
+    let messagesBlocks = [];
+    for (let index = 0; index < Math.floor(filteredArtists.length / ARTISTS_PAGING); index++) {
+        messagesBlocks.push(filteredArtists.slice(index * ARTISTS_PAGING, (index + 1) * ARTISTS_PAGING));
+    }
+    messagesBlocks
+        .filter((item) => !!item)
+        .forEach(async (msgBlock, index) => {
+            setTimeout(() => {
+                const opts = {
+                    reply_markup: {
+                        inline_keyboard: msgBlock.map((item) => [{ text: item, callback_data: 'findMusic~' + item }])
+                    }
+                };
+
+                bot.sendMessage(chatId, 'Список исполнителей у нас', opts);
+            }, index * 100);
+        });
 });
